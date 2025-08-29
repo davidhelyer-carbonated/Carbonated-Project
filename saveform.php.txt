@@ -1,0 +1,38 @@
+add_action('wp_loaded', 'save_carbon_tracker_data');
+
+function save_carbon_tracker_data() {
+    if (isset($_POST['submit_carbon_data']) && is_user_logged_in()) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'carbon_tracker';
+
+        $user_id         = get_current_user_id();
+        $flight_hours    = floatval($_POST['flight_hours']);
+        $car_miles       = floatval($_POST['car_miles']);
+        $electricity_kwh = floatval($_POST['electricity_kwh']);
+        $gas_kwh         = floatval($_POST['gas_kwh']);
+        $meat_meals      = sanitize_text_field($_POST['meat_meals']);
+        $food_waste      = floatval($_POST['food_waste']);
+        $clothes_bought  = intval($_POST['clothes_bought']);
+        $streaming_hours = intval($_POST['streaming_hours']);
+        $date_submitted  = current_time('mysql');
+
+        $wpdb->insert(
+            $table,
+            [
+                'user_id'         => $user_id,
+                'flight_hours'    => $flight_hours,
+                'car_miles'       => $car_miles,
+                'electricity_kwh' => $electricity_kwh,
+                'gas_kwh'         => $gas_kwh,
+                'meat_meals'      => $meat_meals,
+                'food_waste'      => $food_waste,
+                'clothes_bought'  => $clothes_bought,
+                'streaming_hours' => $streaming_hours,
+                'date_submitted'  => $date_submitted,
+            ]
+        );
+
+        wp_redirect(home_url('/dashboard-2/'));
+        exit;
+    }
+}

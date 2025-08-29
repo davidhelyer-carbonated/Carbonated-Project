@@ -1,0 +1,74 @@
+// == Carbon Tracker Chart Data ==
+
+// 1. Create AJAX Endpoint
+add_action('wp_ajax_get_carbon_tracker_chart_data', 'get_carbon_tracker_chart_data_ajax');
+add_action('wp_ajax_nopriv_get_carbon_tracker_chart_data', 'get_carbon_tracker_chart_data_ajax');
+
+function get_carbon_tracker_chart_data_ajax() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'carbon_tracker';  // Correct the table name here
+
+    $user_id = get_current_user_id();
+
+    if (!$user_id) {
+        wp_send_json_error('Not logged in');
+        wp_die();
+    }
+
+    // Get the latest user data
+    $user_data = $wpdb->get_row(
+        $wpdb->prepare(
+            "SELECT 
+                flight_hours, car_miles, electricity_kwh, gas_kwh, 
+                meat_meals, food_waste, clothes_bought, streaming_hours 
+             FROM $table 
+             WHERE user_id = %d 
+             ORDER BY date_submitted DESC 
+             LIMIT 1",
+            $user_id
+        ),
+        ARRAY_A
+    );
+
+    // Get average data
+    $average_data = $wpdb->get_row(
+        "SELECT 
+            AVG(flight_hours) AS avg_flight_hours,
+            AVG(car_miles) AS avg_car_miles,
+            AVG(electricity_kwh) AS avg_electricity_kwh,
+            AVG(gas_kwh) AS avg_gas_kwh,
+            AVG(meat_meals) AS avg_meat_meals,
+            AVG(food_waste) AS avg_food_waste,
+            AVG(clothes_bought) AS avg_clothes_bought,
+            AVG(streaming_hours) AS avg_streaming_hours
+         FROM $table",
+        ARRAY_A
+    );
+
+    // Send response with data
+    wp_send_json_success([
+        'user_data' => $user_data,
+        'average_data' => $average_data
+    ]);
+
+    wp_die();
+}
+
+// 2. Enqueue Scripts and Pass AJAX URL
+add_action('wp_enqueue_scripts', function () {
+    if (is_page('dashboard-2')) { //  Adjust page slug if needed
+        wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js', [], null, true);
+
+        wp_enqueue_script(
+            'carbon-dashboard',
+            get_template_directory_uri() . '/js/carbon-dashboard.js',
+            ['chartjs', 'jquery'],
+            null,
+            true
+        );
+
+        wp_localize_script('carbon-dashboard', 'carbonTracker', [
+            'ajax_url' => admin_url('admin-ajax.php')
+        ]);
+    }
+});

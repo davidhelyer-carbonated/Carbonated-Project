@@ -1,0 +1,74 @@
+function carbon_suggestions_shortcode() {
+    if (!is_user_logged_in()) {
+        return 'Please log in to see suggestions.';
+    }
+
+    global $wpdb;
+    $user_id = get_current_user_id();
+    $table = $wpdb->prefix . 'carbon_tracker';
+    $thirty_days_ago = date('Y-m-d', strtotime('-30 days'));
+
+    $query = $wpdb->prepare(
+        "SELECT flight_hours, car_miles, electricity_kwh, gas_kwh, meat_meals, food_waste, clothes_bought, streaming_hours 
+         FROM $table 
+         WHERE user_id = %d AND date_submitted >= %s 
+         ORDER BY date_submitted DESC 
+         LIMIT 1",
+        $user_id,
+        $thirty_days_ago
+    );
+
+    $user_data = $wpdb->get_row($query, ARRAY_A);
+
+    if (!$user_data) {
+        return 'No data found for suggestions.';
+    }
+
+    $suggestions = generate_carbon_suggestions($user_data);
+    return '<div class="carbon-suggestions-box">' . nl2br(esc_html($suggestions)) . '</div>';
+}
+
+function generate_carbon_suggestions($user_data) {
+    $api_key = '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'; // Replace with your OpenAI API key
+
+    $prompt = "You are a sustainability coach. Based on the data below, provide 3 detailed suggestions to reduce this user's carbon footprint. Use clear language, and separate each suggestion with line breaks:\n\n"
+        . "Flight hours: {$user_data['flight_hours']} hours\n"
+        . "Car miles: {$user_data['car_miles']} miles\n"
+        . "Electricity: {$user_data['electricity_kwh']} kWh\n"
+        . "Gas: {$user_data['gas_kwh']} kWh\n"
+        . "Meat meals: {$user_data['meat_meals']}\n"
+        . "Food waste: {$user_data['food_waste']} kg\n"
+        . "Clothes bought: {$user_data['clothes_bought']}\n"
+        . "Streaming hours: {$user_data['streaming_hours']} hours\n";
+
+    $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+        'headers' => [
+            'Authorization' => 'Bearer ' . $api_key,
+            'Content-Type'  => 'application/json',
+        ],
+        'body' => json_encode([
+            'model' => 'gpt-3.5-turbo',
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt]
+            ],
+            'max_tokens' => 500,
+            'temperature' => 0.7,
+        ])
+    ]);
+
+    if (is_wp_error($response)) {
+        return 'API error: ' . $response->get_error_message();
+    }
+
+    $body = json_decode(wp_remote_retrieve_body($response), true);
+
+    if (isset($body['choices'][0]['message']['content'])) {
+        return $body['choices'][0]['message']['content'];
+    } elseif (isset($body['error']['message'])) {
+        return 'OpenAI API returned an error: ' . $body['error']['message'];
+    } else {
+        return 'No suggestions returned by API. Raw response: ' . print_r($body, true);
+    }
+}
+
+add_shortcode('carbon_suggestions', 'carbon_suggestions_shortcode');

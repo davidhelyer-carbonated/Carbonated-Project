@@ -1,0 +1,74 @@
+add_action('wp_footer', function() { ?>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof carbonTracker === 'undefined') {
+        console.error('Carbon Tracker config missing.');
+        return;
+    }
+
+    fetch(carbonTracker.ajax_url + '?action=get_carbon_tracker_chart_data')
+    .then(function(response) {
+        return response.json();
+    })
+    .then(function(result) {
+        if (!result.success || !result.data || !result.data.user_data || !result.data.average_data) {
+            console.error('Carbon Tracker data missing or invalid:', result);
+            return;
+        }
+
+        var userData = result.data.user_data;
+        var averageData = result.data.average_data;
+
+        function createDonutChart(canvasId, userValue, averageValue, label) {
+            var ctx = document.getElementById(canvasId);
+            if (!ctx) {
+                console.warn('Canvas not found:', canvasId);
+                return;
+            }
+            new Chart(ctx.getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['Your Data', 'Average Data'],
+                    datasets: [{
+                        label: label,
+                        data: [parseFloat(userValue) || 0, parseFloat(averageValue) || 0],
+                        backgroundColor: ['rgba(0, 128, 0, 0.6)', 'rgba(52, 152, 219, 0.6)'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': ' + context.raw.toFixed(2);
+                                }
+                            }
+                        }
+                    },
+                    animation: {
+                        animateScale: true,
+                        animateRotate: true
+                    }
+                }
+            });
+        }
+
+        // Create charts for each metric
+        createDonutChart('flightHoursDonut', userData.flight_hours, averageData.avg_flight_hours, 'Flight Hours');
+        createDonutChart('carMilesDonut', userData.car_miles, averageData.avg_car_miles, 'Car Miles');
+        createDonutChart('electricityDonut', userData.electricity_kwh, averageData.avg_electricity_kwh, 'Electricity kWh');
+        createDonutChart('gasDonut', userData.gas_kwh, averageData.avg_gas_kwh, 'Gas kWh');
+        createDonutChart('meatMealsDonut', userData.meat_meals, averageData.avg_meat_meals, 'Meat Meals');
+        createDonutChart('clothesBoughtDonut', userData.clothes_bought, averageData.avg_clothes_bought, 'Clothes Bought');
+    })
+    .catch(function(error) {
+        console.error('Error loading carbon tracker data:', error);
+    });
+});
+</script>
+<?php });

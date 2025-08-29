@@ -1,0 +1,15 @@
+add_filter( 'woocommerce_registration_redirect', 'ts_custom_redirection_after_registration', 10, 1 );
+function ts_custom_redirection_after_registration( $redirection_url ){
+
+    $user = wp_get_current_user();
+
+    if ( in_array( 'editor', (array) $user->roles ) ) {
+        // Redirect Editors to Staff Dashboard
+        $redirection_url = site_url('/staff-dashboard');
+    } else {
+        // Default redirect for customers/subscribers
+        $redirection_url = site_url('/about/');
+    }
+
+    return $redirection_url;
+}

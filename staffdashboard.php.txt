@@ -1,0 +1,174 @@
+function staff_dashboard_content() {
+    global $wpdb;
+
+    // Get carbon data since April 2025
+    $results = $wpdb->get_results("
+        SELECT date_submitted, 
+               flight_hours, car_miles, electricity_kwh, gas_kwh, 
+               meat_meals, food_waste, clothes_bought, streaming_hours
+        FROM wp_carbon_tracker
+        WHERE date_submitted >= '2025-04-01'
+        ORDER BY date_submitted ASC
+    ");
+
+    if (empty($results)) {
+        echo "<p>No carbon data available since April 2025.</p>";
+        return;
+    }
+
+    // Prepare datasets
+    $datasets = [
+        'flight_hours' => [],
+        'car_miles' => [],
+        'electricity_kwh' => [],
+        'gas_kwh' => [],
+        'meat_meals' => [],
+        'food_waste' => [],
+        'clothes_bought' => [],
+        'streaming_hours' => []
+    ];
+    $labels = [];
+
+    foreach ($results as $row) {
+        // Use only the date (no time)
+        $labels[] = date("Y-m-d", strtotime($row->date_submitted));
+        foreach ($datasets as $key => &$values) {
+            $values[] = isset($row->$key) ? (float)$row->$key : 0;
+        }
+    }
+    ?>
+    <div style="max-width: 900px; margin: 0 auto;">
+        <h2>Staff Dashboard</h2>
+        <p>Overview of carbon tracking data since April 2025 (with predictions)</p>
+
+        <style>
+            .chart-container {
+                width: 100%;
+                margin-bottom: 40px;
+            }
+            canvas {
+                width: 100% !important;
+                height: 400px !important;
+            }
+        </style>
+
+        <?php foreach ($datasets as $key => $values): ?>
+            <div class="chart-container">
+                <h3><?php echo ucfirst(str_replace("_", " ", $key)); ?></h3>
+                <canvas id="<?php echo $key; ?>Chart"></canvas>
+            </div>
+        <?php endforeach; ?>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const labels = <?php echo json_encode($labels); ?>;
+        const datasets = <?php echo json_encode($datasets); ?>;
+
+        // Simple linear regression for forecasting
+        function forecastLinear(data, futurePoints = 7) {
+            const n = data.length;
+            if (n < 2) return Array(futurePoints).fill(null);
+
+            const x = Array.from({length: n}, (_, i) => i + 1);
+            const y = data;
+
+            const xMean = x.reduce((a,b) => a+b,0) / n;
+            const yMean = y.reduce((a,b) => a+b,0) / n;
+
+            const num = x.reduce((sum, xi, i) => sum + (xi - xMean)*(y[i] - yMean), 0);
+            const den = x.reduce((sum, xi) => sum + Math.pow(xi - xMean, 2), 0) || 1;
+
+            const slope = num / den;
+            const intercept = yMean - slope * xMean;
+
+            const forecast = [];
+            for (let i = n + 1; i <= n + futurePoints; i++) {
+                const v = slope * i + intercept;
+                forecast.push(Math.max(0, v)); // clamp to >= 0
+            }
+            return forecast;
+        }
+
+        // Infer the most common/median step size (in days) from existing labels
+        function inferStepDays(dateLabels) {
+            if (!dateLabels || dateLabels.length < 2) return 7;
+            const toDate = (d) => new Date(d + 'T00:00:00Z');
+            const diffs = [];
+            for (let i = 1; i < dateLabels.length; i++) {
+                const prev = toDate(dateLabels[i - 1]);
+                const curr = toDate(dateLabels[i]);
+                const diffDays = Math.round((curr - prev) / (1000 * 60 * 60 * 24));
+                if (diffDays > 0) diffs.push(diffDays);
+            }
+            if (diffs.length === 0) return 7;
+            diffs.sort((a,b) => a - b);
+            const mid = Math.floor(diffs.length / 2);
+            return diffs.length % 2 ? diffs[mid] : Math.round((diffs[mid - 1] + diffs[mid]) / 2);
+        }
+
+        // Build forecast labels as real future dates
+        function buildFutureDateLabels(lastLabel, stepDays, count) {
+            const out = [];
+            const base = new Date(lastLabel + 'T00:00:00Z');
+            for (let i = 1; i <= count; i++) {
+                const d = new Date(base);
+                d.setDate(d.getDate() + i * stepDays);
+                out.push(d.toISOString().slice(0, 10));
+            }
+            return out;
+        }
+
+        const FUTURE_POINTS = 7; // number of predicted points
+        const stepDays = inferStepDays(labels);
+        const lastLabel = labels[labels.length - 1];
+        const forecastLabels = buildFutureDateLabels(lastLabel, stepDays, FUTURE_POINTS);
+
+        Object.keys(datasets).forEach(key => {
+            const ctx = document.getElementById(key + 'Chart').getContext('2d');
+
+            const originalData = datasets[key] || [];
+            const forecastData = forecastLinear(originalData, FUTURE_POINTS);
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels.concat(forecastLabels),
+                    datasets: [
+                        {
+                            label: key.replace(/_/g, ' '),
+                            data: originalData.concat(Array(FUTURE_POINTS).fill(null)),
+                            borderColor: 'rgba(34, 139, 34, 0.8)',
+                            backgroundColor: 'rgba(34, 139, 34, 0.2)',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 3
+                        },
+                        {
+                            label: key.replace(/_/g, ' ') + " (Forecast)",
+                            data: Array(originalData.length).fill(null).concat(forecastData),
+                            borderColor: 'rgba(255, 99, 132, 0.8)',
+                            borderDash: [5,5],
+                            fill: false,
+                            tension: 0.3,
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: 'Date' } },
+                        y: { title: { display: true, text: 'Total' } }
+                    }
+                }
+            });
+        });
+    </script>
+    <?php
+}
+add_shortcode('staff_carbon_dashboard', 'staff_dashboard_content');

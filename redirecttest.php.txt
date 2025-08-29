@@ -1,0 +1,18 @@
+function ts_redirect_login( $redirect, $user ) {
+    $redirect_page_id = url_to_postid( $redirect );
+    $checkout_page_id = wc_get_page_id( 'checkout' );
+
+    // If logging in during checkout, keep them there
+    if ( $redirect_page_id == $checkout_page_id ) {
+        return $redirect;
+    }
+
+    // Check user role
+    if ( in_array( 'editor', (array) $user->roles ) ) {
+        return site_url('/staff-dashboard');
+    } else {
+        return site_url('/about');
+    }
+}
+
+add_filter( 'woocommerce_login_redirect', 'ts_redirect_login', 10, 2 );
